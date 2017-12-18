@@ -37,6 +37,6 @@ fn format_error(src_units: &SrcUnits, error: &Error) -> String {
                 msg
             )
         }
-        _ => panic!("can't format this error type")
+        _ => panic!("can't format this error type"),
     }
 }

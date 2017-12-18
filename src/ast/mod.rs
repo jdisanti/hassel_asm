@@ -50,7 +50,7 @@ pub enum Statement {
 impl Statement {
     pub fn parse<'a>(src_unit: &'a SrcUnit) -> error::Result<Vec<Statement>> {
         if src_unit.source == "" {
-            return Ok(Vec::new())
+            return Ok(Vec::new());
         } else {
             let mut errors: Vec<lalrpop_util::ErrorRecovery<usize, (usize, &'a str), ()>> = Vec::new();
             let ast = grammar::parse_Program(src_unit.id, &mut errors, &src_unit.source);

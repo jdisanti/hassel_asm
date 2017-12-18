@@ -59,34 +59,37 @@ impl IR {
         for statement in units {
             use ast::Statement::*;
             match *statement {
-                Comment => { }
+                Comment => {}
                 Label(tag, ref label) => {
                     builder.new_block(None, Some(Arc::clone(label)));
                 }
                 ImpliedInstruction(tag, ref name) => {
                     if let Some(op_class) = OpClass::from_name(&*name) {
                         if let Some(op_code) = OpCode::find_by_class_and_mode(op_class, OpAddressMode::Implied) {
-                            builder.current_block().add_op(IROp::new(
-                                op_code,
-                                IRParam::Resolved(OpParam::None),
-                            ));
+                            builder.current_block().add_op(
+                                IROp::new(op_code, IRParam::Resolved(OpParam::None)),
+                            );
                         } else {
-                            return Err(AssemblerError(tag, format!("op {} requires a parameter", name)).into());
+                            return Err(
+                                AssemblerError(tag, format!("op {} requires a parameter", name)).into(),
+                            );
                         }
                     } else {
-                        return Err(AssemblerError(tag, format!("unknown opcode: {}", name)).into());
+                        return Err(
+                            AssemblerError(tag, format!("unknown opcode: {}", name)).into(),
+                        );
                     }
                 }
-                OperandInstruction(tag, ref name, ref operand) => {
-                    unimplemented!()
-                }
+                OperandInstruction(tag, ref name, ref operand) => unimplemented!(),
                 MetaInstruction(ref meta_inst) => {
                     match *meta_inst {
                         ast::MetaInstruction::Org(tag, number) => {
                             if let ast::Number::Word(location) = number {
                                 builder.new_block(Some(location), None);
                             } else {
-                                return Err(AssemblerError(tag, "org must be a 16-bit number".into()).into())
+                                return Err(
+                                    AssemblerError(tag, "org must be a 16-bit number".into()).into(),
+                                );
                             }
                         }
                         ast::MetaInstruction::Byte(tag, ref numbers) => {
@@ -95,7 +98,9 @@ impl IR {
                                 if let ast::Number::Byte(byte) = *num {
                                     bytes.push(byte);
                                 } else {
-                                    return Err(AssemblerError(tag, "byte constants must be in range".into()).into())
+                                    return Err(
+                                        AssemblerError(tag, "byte constants must be in range".into()).into(),
+                                    );
                                 }
                             }
                             builder.current_block().add_bytes(bytes);
@@ -114,9 +119,7 @@ struct IRBuilder {
 
 impl IRBuilder {
     pub fn new() -> IRBuilder {
-        IRBuilder {
-            blocks: Vec::new(),
-        }
+        IRBuilder { blocks: Vec::new() }
     }
 
     pub fn new_block(&mut self, position: Option<u16>, label: Option<Arc<String>>) {
