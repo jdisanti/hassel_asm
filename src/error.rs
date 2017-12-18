@@ -22,10 +22,14 @@ error_chain! {
             description("Failed to assemble")
             display("{}", msg)
         }
+        SrcUnitError(msg: String) {
+            description("Failed to assemble")
+            display("{}", msg)
+        }
     }
 }
 
-fn format_error(src_units: &SrcUnits, error: &Error) -> String {
+pub fn format_error(src_units: &SrcUnits, error: &Error) -> String {
     match error.0 {
         ErrorKind::AssemblerError(ref src_tag, ref msg) => {
             let row_col = src_tag.row_col(src_units.source(src_tag.unit));
@@ -37,6 +41,6 @@ fn format_error(src_units: &SrcUnits, error: &Error) -> String {
                 msg
             )
         }
-        _ => panic!("can't format this error type"),
+        _ => format!("{}", error),
     }
 }

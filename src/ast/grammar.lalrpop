@@ -6,7 +6,7 @@ use std::sync::Arc;
 use src_tag::SrcTag;
 use lalrpop_util::ErrorRecovery;
 
-use ast::{Number, Term, Operand, MetaInstruction, Statement};
+use ast::{Number, Term, Operand, OperandModifier, MetaInstruction, Statement};
 
 grammar<'err>(src_unit: usize, errors: &'err mut Vec<ErrorRecovery<usize, (usize, &'input str), ()>>);
 
@@ -76,14 +76,17 @@ Term: Term = {
 };
 
 Operand: Operand = {
-    "#" <o:Operand> => Operand::Immediate(Box::new(o)),
-    ">" <t:Term> => Operand::HighByte(t),
-    "<" <t:Term> => Operand::LowByte(t),
+    "#" <t:Term> => Operand::Immediate(OperandModifier::None, t),
+    "#" ">" <t:Term> => Operand::Immediate(OperandModifier::HighByte, t),
+    "#" "<" <t:Term> => Operand::Immediate(OperandModifier::LowByte, t),
+    <t:Term> => Operand::Address(OperandModifier::None, t),
+    ">" <t:Term> => Operand::Address(OperandModifier::HighByte, t),
+    "<" <t:Term> => Operand::Address(OperandModifier::LowByte, t),
     <t:Term> "," "X" => Operand::AbsoluteX(t),
     <t:Term> "," "Y" => Operand::AbsoluteY(t),
     "(" <t:Term> "," "X" ")" => Operand::IndirectX(t),
     "(" <t:Term> ")" "," "Y" => Operand::IndirectY(t),
-    <t:Term> => Operand::Term(t),
+    "(" <t:Term> ")" => Operand::Indirect(t),
 };
 
 MetaInstruction: MetaInstruction = {
@@ -93,8 +96,8 @@ MetaInstruction: MetaInstruction = {
 
 Statement: Statement = {
     Comment => Statement::Comment,
-    <st:@L> <i:Instruction> => Statement::ImpliedInstruction(SrcTag::new(src_unit, st), i),
-    <st:@L> <i:Instruction> <o:Operand> => Statement::OperandInstruction(SrcTag::new(src_unit, st), i, o),
+    <st:@L> <i:Instruction> => Statement::Instruction(SrcTag::new(src_unit, st), i, Operand::None),
+    <st:@L> <i:Instruction> <o:Operand> => Statement::Instruction(SrcTag::new(src_unit, st), i, o),
     <m:MetaInstruction> => Statement::MetaInstruction(m),
     <st:@L> <l:Label> => Statement::Label(SrcTag::new(src_unit, st), l),
 };

@@ -5,6 +5,7 @@ use error;
 use src_tag::SrcTag;
 use src_unit::SrcUnit;
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -20,16 +21,23 @@ pub enum Term {
     Name(SrcTag, Arc<String>),
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum OperandModifier {
+    None,
+    HighByte,
+    LowByte,
+}
+
 #[derive(Debug)]
 pub enum Operand {
-    Immediate(Box<Operand>),
-    HighByte(Term),
-    LowByte(Term),
+    None,
+    Immediate(OperandModifier, Term),
+    Address(OperandModifier, Term),
     AbsoluteX(Term),
     AbsoluteY(Term),
+    Indirect(Term),
     IndirectX(Term),
     IndirectY(Term),
-    Term(Term),
 }
 
 #[derive(Debug)]
@@ -42,8 +50,7 @@ pub enum MetaInstruction {
 pub enum Statement {
     Comment,
     Label(SrcTag, Arc<String>),
-    ImpliedInstruction(SrcTag, Arc<String>),
-    OperandInstruction(SrcTag, Arc<String>, Operand),
+    Instruction(SrcTag, Arc<String>, Operand),
     MetaInstruction(MetaInstruction),
 }
 

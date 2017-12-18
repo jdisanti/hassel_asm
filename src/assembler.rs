@@ -37,10 +37,24 @@ impl Assembler {
             bytes: None,
         };
 
-        output.ir = Some(ir::IR::generate(output.ast.as_ref().unwrap())?);
+        output.ir = Some(Assembler::translate_error(
+            &self.src_units,
+            ir::IR::generate(output.ast.as_ref().unwrap()),
+        )?);
 
         // TODO: generate bytes
 
         Ok(output)
+    }
+
+    fn translate_error<T>(src_units: &SrcUnits, result: error::Result<T>) -> error::Result<T> {
+        match result {
+            Ok(_) => result,
+            Err(err) => {
+                Err(
+                    error::ErrorKind::SrcUnitError(error::format_error(src_units, &err)).into(),
+                )
+            }
+        }
     }
 }
