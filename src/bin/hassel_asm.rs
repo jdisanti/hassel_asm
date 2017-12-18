@@ -71,7 +71,7 @@ pub fn main() {
     handle_result(assembler.parse_unit(&options.input_name, &input_source));
 
     let assembler_output = handle_result(assembler.assemble());
-    println!("{:#?}", assembler_output.ast);
+    println!("{:#?}", assembler_output);
 
     // TODO: output binary
 }
