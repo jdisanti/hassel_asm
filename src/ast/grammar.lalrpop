@@ -1,0 +1,109 @@
+#![allow(unknown_lints)]
+#![allow(clippy)]
+
+use std::str::FromStr;
+use std::sync::Arc;
+use src_tag::SrcTag;
+use lalrpop_util::ErrorRecovery;
+
+use ast::{Number, Term, Operand, MetaInstruction, Statement};
+
+grammar<'err>(src_unit: usize, errors: &'err mut Vec<ErrorRecovery<usize, (usize, &'input str), ()>>);
+
+match {
+    r";[^\n]*",
+    r"[A-Z]{3}",
+} else {
+    _
+}
+
+Comment: () = {
+    r";[^\n]*"
+};
+
+Name: Arc<String> = {
+    r"[a-zA-Z_][\w]*" => Arc::new(String::from_str(<>).unwrap())
+};
+
+Label: Arc<String> = {
+    r"[a-zA-Z_][\w]*:" => {
+        let lbl = <>;
+        Arc::new(String::from_str(&lbl[0..lbl.len()-1]).unwrap())
+    }
+};
+
+Instruction: Arc<String> = {
+    r"[A-Z]{3}" => Arc::new(String::from_str(<>).unwrap())
+};
+
+Number: Number = {
+    // Base 10
+    <s:r"[0-9]+"> => {
+        let val = u32::from_str(s).unwrap();
+        if val <= 0xFF {
+            Number::Byte(val as u8)
+        } else if val <= 0xFFFF {
+            Number::Word(val as u16)
+        } else {
+            Number::Invalid(val as usize)
+        }
+    },
+    // Base 16
+    <s:r"\$[0-9A-Fa-f]+"> => {
+        let val = u32::from_str_radix(&s[1..], 16).unwrap();
+        if val <= 0xFF {
+            Number::Byte(val as u8)
+        } else if val <= 0xFFFF {
+            Number::Word(val as u16)
+        } else {
+            Number::Invalid(val as usize)
+        }
+    },
+};
+
+NumberCommaList: Vec<Number> = {
+    <l:NumberCommaList> "," <n:Number> => {
+        let mut result = l;
+        result.push(n);
+        result
+    },
+    Number => vec![<>],
+};
+
+Term: Term = {
+    <st:@L> <n:Number> => Term::Number(SrcTag::new(src_unit, st), n),
+    <st:@L> <n:Name> => Term::Name(SrcTag::new(src_unit, st), n),
+};
+
+Operand: Operand = {
+    "#" <o:Operand> => Operand::Immediate(Box::new(o)),
+    ">" <t:Term> => Operand::HighByte(t),
+    "<" <t:Term> => Operand::LowByte(t),
+    <t:Term> "," "X" => Operand::AbsoluteX(t),
+    <t:Term> "," "Y" => Operand::AbsoluteY(t),
+    "(" <t:Term> "," "X" ")" => Operand::IndirectX(t),
+    "(" <t:Term> ")" "," "Y" => Operand::IndirectY(t),
+    <t:Term> => Operand::Term(t),
+};
+
+MetaInstruction: MetaInstruction = {
+    <st:@L> ".org" <n:Number> => MetaInstruction::Org(SrcTag::new(src_unit, st), n),
+    <st:@L> ".byte" <l:NumberCommaList> => MetaInstruction::Byte(SrcTag::new(src_unit, st), l),
+};
+
+Statement: Statement = {
+    Comment => Statement::Comment,
+    <st:@L> <i:Instruction> => Statement::ImpliedInstruction(SrcTag::new(src_unit, st), i),
+    <st:@L> <i:Instruction> <o:Operand> => Statement::OperandInstruction(SrcTag::new(src_unit, st), i, o),
+    <m:MetaInstruction> => Statement::MetaInstruction(m),
+    <st:@L> <l:Label> => Statement::Label(SrcTag::new(src_unit, st), l),
+};
+
+pub Program: Vec<Statement> = {
+    <p:Program> <s:Statement> => {
+        let mut result = p;
+        result.push(s);
+        result
+    },
+    Statement => vec![<>],
+};
