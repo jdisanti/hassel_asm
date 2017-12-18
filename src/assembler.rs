@@ -42,6 +42,8 @@ impl Assembler {
             ir::IR::generate(output.ast.as_ref().unwrap()),
         )?);
 
+        Assembler::translate_error(&self.src_units, output.ir.as_mut().unwrap().resolve())?;
+
         // TODO: generate bytes
 
         Ok(output)
