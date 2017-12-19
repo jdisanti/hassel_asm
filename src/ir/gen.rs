@@ -1,49 +1,112 @@
 use hassel_lib6502::{OpAddressMode, OpClass, OpCode, OpParam};
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use ast;
 use error;
 use error::ErrorKind::AssemblerError;
+use ir::{IR, IRBlock, IRChunk, IRParam, IROp};
 use src_tag::SrcTag;
 
-#[derive(Debug)]
-pub enum IRParam {
-    Resolved(OpAddressMode, OpParam),
-    Unresolved(OpAddressMode, SrcTag, Arc<String>),
-    UnresolvedLowByte(OpAddressMode, SrcTag, Arc<String>),
-    UnresolvedHighByte(OpAddressMode, SrcTag, Arc<String>),
+pub trait AppendBytes {
+    fn append_bytes(&self, bytes: &mut Vec<u8>);
 }
 
-impl IRParam {
-    pub fn mode(&self) -> OpAddressMode {
-        use self::IRParam::*;
+impl AppendBytes for IRBlock {
+    fn append_bytes(&self, bytes: &mut Vec<u8>) {
+        for chunk in &self.chunks {
+            chunk.append_bytes(bytes);
+        }
+    }
+}
+
+impl AppendBytes for IRChunk {
+    fn append_bytes(&self, bytes: &mut Vec<u8>) {
         match *self {
-            Resolved(mode, _) => mode,
-            Unresolved(mode, _, _) => mode,
-            UnresolvedLowByte(mode, _, _) => mode,
-            UnresolvedHighByte(mode, _, _) => mode,
+            IRChunk::Op(ref op) => op.append_bytes(bytes),
+            IRChunk::Bytes(ref val) => bytes.extend(val),
         }
     }
+}
 
-    pub fn with_mode(self, mode: OpAddressMode) -> IRParam {
-        use self::IRParam::*;
-        match self {
-            Resolved(_, param) => Resolved(mode, param),
-            Unresolved(_, tag, name) => Unresolved(mode, tag, name),
-            UnresolvedLowByte(_, tag, name) => UnresolvedLowByte(mode, tag, name),
-            UnresolvedHighByte(_, tag, name) => UnresolvedHighByte(mode, tag, name),
+impl AppendBytes for IROp {
+    fn append_bytes(&self, bytes: &mut Vec<u8>) {
+        bytes.push(self.code.value);
+        if let IRParam::Resolved(_, param) = self.param {
+            match param {
+                OpParam::None => {}
+                OpParam::Byte(val) => bytes.push(val),
+                OpParam::Word(_) => {
+                    bytes.push(param.low_byte());
+                    bytes.push(param.high_byte());
+                }
+            }
+        } else {
+            unreachable!()
         }
     }
+}
 
-    pub fn len(&self) -> Option<u8> {
+trait ResolveLength {
+    fn resolve_length(&mut self) -> error::Result<()>;
+}
+
+impl ResolveLength for IRBlock {
+    fn resolve_length(&mut self) -> error::Result<()> {
+        let length = self.chunks.iter().fold(0usize, |acc, chunk| acc + chunk.len());
+        if length > 0xFFFF {
+            Err(
+                error::ErrorKind::SrcUnitError("assembly won't fit in 65535 bytes".into()).into(),
+            )
+        } else {
+            self.length = length as u16;
+            Ok(())
+        }
+    }
+}
+
+trait ResolveParameters {
+    fn resolve_parameters(&mut self, position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()>;
+}
+
+impl ResolveParameters for IRBlock {
+    fn resolve_parameters(
+        &mut self,
+        block_position: u16,
+        lookup_table: &HashMap<Arc<String>, u16>,
+    ) -> error::Result<()> {
+        let mut position = block_position;
+        for chunk in &mut self.chunks {
+            chunk.resolve_parameters(position, lookup_table)?;
+            position += chunk.len() as u16;
+        }
+        Ok(())
+    }
+}
+
+impl ResolveParameters for IRChunk {
+    fn resolve_parameters(
+        &mut self,
+        chunk_position: u16,
+        lookup_table: &HashMap<Arc<String>, u16>,
+    ) -> error::Result<()> {
         match *self {
-            IRParam::Resolved(_, param) => Some(param.len()),
-            _ => None,
+            IRChunk::Op(ref mut op) => op.resolve_parameters(chunk_position, lookup_table),
+            _ => Ok(()),
         }
     }
+}
 
-    fn resolve_op_params(&mut self, op_position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()> {
+impl ResolveParameters for IROp {
+    fn resolve_parameters(&mut self, op_position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()> {
+        self.param.resolve_parameters(op_position, lookup_table)?;
+        assert!(self.param.len() == Some(self.code.len - 1));
+        Ok(())
+    }
+}
+
+impl ResolveParameters for IRParam {
+    fn resolve_parameters(&mut self, op_position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()> {
         let lookup = &|tag: SrcTag, name: &Arc<String>| if let Some(position) = lookup_table.get(name) {
             Ok(*position)
         } else {
@@ -83,160 +146,23 @@ impl IRParam {
     }
 }
 
-#[derive(Debug, new)]
-pub struct IROp {
-    code: &'static OpCode,
-    param: IRParam,
-}
+pub struct IRGenerator {}
 
-impl IROp {
-    fn resolve_op_params(&mut self, op_position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()> {
-        self.param.resolve_op_params(op_position, lookup_table)?;
-        assert!(self.param.len() == Some(self.code.len - 1));
-        Ok(())
+impl IRGenerator {
+    pub fn generate(units: &[ast::Statement]) -> error::Result<IR> {
+        let mut ir = IRGenerator::generate_ir(units)?;
+        IRGenerator::resolve(&mut ir)?;
+        Ok(ir)
     }
 
-    fn append_bytes(&self, bytes: &mut Vec<u8>) {
-        bytes.push(self.code.value);
-        if let IRParam::Resolved(_, param) = self.param {
-            match param {
-                OpParam::None => {},
-                OpParam::Byte(val) => bytes.push(val),
-                OpParam::Word(_) => {
-                    bytes.push(param.low_byte());
-                    bytes.push(param.high_byte());
-                }
-            }
-        } else {
-            unreachable!()
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum IRChunk {
-    Op(IROp),
-    Bytes(Vec<u8>),
-}
-
-impl IRChunk {
-    fn len(&self) -> usize {
-        match *self {
-            IRChunk::Op(ref op) => op.code.len as usize,
-            IRChunk::Bytes(ref bytes) => bytes.len(),
-        }
-    }
-
-    fn resolve_op_params(
-        &mut self,
-        chunk_position: u16,
-        lookup_table: &HashMap<Arc<String>, u16>,
-    ) -> error::Result<()> {
-        match *self {
-            IRChunk::Op(ref mut op) => op.resolve_op_params(chunk_position, lookup_table),
-            _ => Ok(()),
-        }
-    }
-
-    fn append_bytes(&self, bytes: &mut Vec<u8>) {
-        match *self {
-            IRChunk::Op(ref op) => op.append_bytes(bytes),
-            IRChunk::Bytes(ref val) => bytes.extend(val),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct IRBlock {
-    position: Option<u16>,
-    label: Option<Arc<String>>,
-    chunks: Vec<IRChunk>,
-    length: u16,
-}
-
-impl IRBlock {
-    fn new(position: Option<u16>, label: Option<Arc<String>>) -> IRBlock {
-        IRBlock {
-            position: position,
-            label: label,
-            chunks: Vec::new(),
-            length: 0,
-        }
-    }
-
-    fn add_op(&mut self, op: IROp) {
-        self.chunks.push(IRChunk::Op(op));
-    }
-
-    fn add_bytes(&mut self, bytes: Vec<u8>) {
-        self.chunks.push(IRChunk::Bytes(bytes));
-    }
-
-    fn resolve_op_params(
-        &mut self,
-        block_position: u16,
-        lookup_table: &HashMap<Arc<String>, u16>,
-    ) -> error::Result<()> {
-        let mut position = block_position;
-        for chunk in &mut self.chunks {
-            chunk.resolve_op_params(position, lookup_table)?;
-            position += chunk.len() as u16;
-        }
-        Ok(())
-    }
-
-    fn resolve_length(&mut self) -> error::Result<()> {
-        let length = self.chunks.iter().fold(0usize, |acc, chunk| acc + chunk.len());
-        if length > 0xFFFF {
-            Err(
-                error::ErrorKind::SrcUnitError("assembly won't fit in 65535 bytes".into()).into(),
-            )
-        } else {
-            self.length = length as u16;
-            Ok(())
-        }
-    }
-
-    fn append_bytes(&self, bytes: &mut Vec<u8>) {
-        for chunk in &self.chunks {
-            chunk.append_bytes(bytes);
-        }
-    }
-}
-
-#[derive(Debug, new)]
-pub struct IR {
-    blocks: Vec<IRBlock>,
-}
-
-impl IR {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        if self.blocks.is_empty() {
-            return Vec::new();
-        }
-
-        let start_pos = self.blocks[0].position.unwrap() as usize;
-
-        let mut bytes = Vec::new();
-        for block in &self.blocks {
-            let current_pos = start_pos + bytes.len();
-            assert!(current_pos <= 0xFFFF && current_pos + block.length as usize <= 0xFFFF);
-            if block.position.unwrap() as usize > current_pos {
-                bytes.resize(block.position.unwrap() as usize - start_pos, 0);
-            }
-            block.append_bytes(&mut bytes);
-        }
-        bytes
-    }
-
-    pub fn resolve(&mut self) -> error::Result<()> {
-        for block in &mut self.blocks {
+    fn resolve(ir: &mut IR) -> error::Result<()> {
+        for block in &mut ir.blocks {
             block.resolve_length()?;
         }
 
         let mut lookup_table: HashMap<Arc<String>, u16> = HashMap::new();
         let mut position = 0u16;
-        for block in &mut self.blocks {
+        for block in &mut ir.blocks {
             if let Some(pos) = block.position {
                 position = pos;
             } else {
@@ -248,15 +174,15 @@ impl IR {
             position += block.length;
         }
 
-        for block in &mut self.blocks {
+        for block in &mut ir.blocks {
             position = block.position.unwrap();
-            block.resolve_op_params(position, &lookup_table)?;
+            block.resolve_parameters(position, &lookup_table)?;
         }
 
         Ok(())
     }
 
-    pub fn generate(units: &Vec<ast::Statement>) -> error::Result<IR> {
+    fn generate_ir(units: &[ast::Statement]) -> error::Result<IR> {
         let mut builder = IRBuilder::new();
         for statement in units {
             use ast::Statement::*;
@@ -267,7 +193,7 @@ impl IR {
                 }
                 Instruction(tag, ref name, ref operand) => {
                     if let Some(op_class) = OpClass::from_name(&*name) {
-                        let mut param = IR::resolve_operand(operand)?;
+                        let mut param = IRGenerator::resolve_operand(operand)?;
                         if op_class.is_branch() && !op_class.is_jump() {
                             param = param.with_mode(OpAddressMode::PCOffset);
                         }
@@ -319,32 +245,32 @@ impl IR {
         use ast::Operand::*;
         match *operand {
             None => Ok(IRParam::Resolved(OpAddressMode::Implied, OpParam::None)),
-            Immediate(modifier, ref term) => IR::resolve_param(term, modifier, OpAddressMode::Immediate),
-            Address(modifier, ref term) => IR::resolve_param(term, modifier, OpAddressMode::Absolute),
+            Immediate(modifier, ref term) => IRGenerator::resolve_param(term, modifier, OpAddressMode::Immediate),
+            Address(modifier, ref term) => IRGenerator::resolve_param(term, modifier, OpAddressMode::Absolute),
             AbsoluteX(ref term) => {
-                IR::resolve_param(
+                IRGenerator::resolve_param(
                     term,
                     ast::OperandModifier::None,
                     OpAddressMode::AbsoluteOffsetX,
                 )
             }
             AbsoluteY(ref term) => {
-                IR::resolve_param(
+                IRGenerator::resolve_param(
                     term,
                     ast::OperandModifier::None,
                     OpAddressMode::AbsoluteOffsetY,
                 )
             }
-            Indirect(ref term) => IR::resolve_param(term, ast::OperandModifier::None, OpAddressMode::Indirect),
+            Indirect(ref term) => IRGenerator::resolve_param(term, ast::OperandModifier::None, OpAddressMode::Indirect),
             IndirectX(ref term) => {
-                IR::resolve_param(
+                IRGenerator::resolve_param(
                     term,
                     ast::OperandModifier::None,
                     OpAddressMode::PreIndirectX,
                 )
             }
             IndirectY(ref term) => {
-                IR::resolve_param(
+                IRGenerator::resolve_param(
                     term,
                     ast::OperandModifier::None,
                     OpAddressMode::PostIndirectY,
@@ -355,8 +281,8 @@ impl IR {
 
     fn resolve_param(term: &ast::Term, modifier: ast::OperandModifier, mode: OpAddressMode) -> error::Result<IRParam> {
         match *term {
-            ast::Term::Number(tag, ref num) => IR::num_to_param(tag, num, modifier, mode),
-            ast::Term::Name(tag, ref name) => IR::name_to_param(tag, name, modifier, mode),
+            ast::Term::Number(tag, ref num) => IRGenerator::num_to_param(tag, num, modifier, mode),
+            ast::Term::Name(tag, ref name) => IRGenerator::name_to_param(tag, name, modifier, mode),
         }
     }
 

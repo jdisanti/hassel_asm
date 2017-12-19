@@ -72,7 +72,7 @@ pub fn main() {
 
     let assembler_output = handle_result(assembler.assemble());
 
-    let output_file_name = options.output_name.unwrap_or("out.rom".into());
+    let output_file_name = options.output_name.unwrap_or_else(|| "out.rom".into());
     let mut file = match File::create(output_file_name) {
         Ok(file) => file,
         Err(e) => {

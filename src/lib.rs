@@ -11,10 +11,10 @@ extern crate error_chain;
 extern crate hassel_lib6502;
 
 mod assembler;
-mod ast;
+pub mod ast;
 pub mod error;
-mod ir;
-mod src_tag;
+pub mod ir;
+pub mod src_tag;
 mod src_unit;
 
 pub use assembler::{Assembler, AssemblerOutput};

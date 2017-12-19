@@ -1,5 +1,6 @@
 use ast;
 use ir;
+use ir::gen::AppendBytes;
 use error;
 use src_unit::SrcUnits;
 
@@ -10,6 +11,7 @@ pub struct AssemblerOutput {
     pub bytes: Option<Vec<u8>>,
 }
 
+#[derive(Default)]
 pub struct Assembler {
     src_units: SrcUnits,
     units: Vec<ast::Statement>,
@@ -17,10 +19,7 @@ pub struct Assembler {
 
 impl Assembler {
     pub fn new() -> Assembler {
-        Assembler {
-            src_units: SrcUnits::new(),
-            units: Vec::new(),
-        }
+        Assembler::default()
     }
 
     pub fn parse_unit(&mut self, unit_name: &str, unit: &str) -> error::Result<()> {
@@ -39,13 +38,12 @@ impl Assembler {
 
         output.ir = Some(Assembler::translate_error(
             &self.src_units,
-            ir::IR::generate(output.ast.as_ref().unwrap()),
+            ir::gen::IRGenerator::generate(
+                output.ast.as_ref().unwrap(),
+            ),
         )?);
 
-        Assembler::translate_error(&self.src_units, output.ir.as_mut().unwrap().resolve())?;
-
-        output.bytes = Some(output.ir.as_ref().unwrap().to_bytes());
-
+        output.bytes = Some(Assembler::convert_to_bytes(output.ir.as_ref().unwrap()));
         Ok(output)
     }
 
@@ -58,5 +56,24 @@ impl Assembler {
                 )
             }
         }
+    }
+
+    fn convert_to_bytes(ir: &ir::IR) -> Vec<u8> {
+        if ir.blocks.is_empty() {
+            return Vec::new();
+        }
+
+        let start_pos = ir.blocks[0].position.unwrap() as usize;
+
+        let mut bytes = Vec::new();
+        for block in &ir.blocks {
+            let current_pos = start_pos + bytes.len();
+            assert!(current_pos <= 0xFFFF && current_pos + block.length as usize <= 0xFFFF);
+            if block.position.unwrap() as usize > current_pos {
+                bytes.resize(block.position.unwrap() as usize - start_pos, 0);
+            }
+            block.append_bytes(&mut bytes);
+        }
+        bytes
     }
 }
