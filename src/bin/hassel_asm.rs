@@ -73,15 +73,22 @@ pub fn main() {
     let assembler_output = handle_result(assembler.assemble());
 
     let output_file_name = options.output_name.unwrap_or_else(|| "out.rom".into());
-    let mut file = match File::create(output_file_name) {
+    let source_map_file_name = format!("{}.map", output_file_name);
+
+    save_bytes(&output_file_name, &assembler_output.bytes.unwrap());
+    save_bytes(&source_map_file_name, &assembler_output.source_map.unwrap().as_bytes());
+}
+
+fn save_bytes(file_name: &str, bytes: &[u8]) {
+    let mut file = match File::create(file_name) {
         Ok(file) => file,
         Err(e) => {
             println!("Failed to create output file: {}", e);
-            return;
+            process::exit(1);
         }
     };
-    if !file.write_all(&assembler_output.bytes.unwrap()).is_ok() {
+    if !file.write_all(bytes).is_ok() {
         println!("Failed to write to output file");
-        return;
+        process::exit(1);
     }
 }

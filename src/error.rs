@@ -11,6 +11,7 @@ error_chain! {
 
     foreign_links {
         FmtError(::std::fmt::Error);
+        JsonError(::serde_json::Error);
     }
 
     errors {

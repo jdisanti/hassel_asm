@@ -99,6 +99,7 @@ impl ResolveParameters for IRChunk {
 
 impl ResolveParameters for IROp {
     fn resolve_parameters(&mut self, op_position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()> {
+        self.position = op_position;
         self.param.resolve_parameters(op_position, lookup_table)?;
         assert!(self.param.len() == Some(self.code.len - 1));
         Ok(())
@@ -198,7 +199,7 @@ impl IRGenerator {
                             param = param.with_mode(OpAddressMode::PCOffset);
                         }
                         if let Some(op_code) = OpCode::find_by_class_and_mode(op_class, param.mode()) {
-                            builder.current_block().add_op(IROp::new(op_code, param));
+                            builder.current_block().add_op(IROp::new(tag, op_code, param, 0));
                         } else {
                             return Err(
                                 AssemblerError(tag, format!("op {} requires a parameter", name)).into(),

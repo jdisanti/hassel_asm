@@ -4,6 +4,7 @@ use std::sync::Arc;
 use src_tag::SrcTag;
 
 pub(crate) mod gen;
+pub(crate) mod map;
 
 #[derive(Debug)]
 pub enum IRParam {
@@ -41,8 +42,10 @@ impl IRParam {
 
 #[derive(Debug, new)]
 pub struct IROp {
+    pub tag: SrcTag,
     pub code: &'static OpCode,
     pub param: IRParam,
+    pub position: u16,
 }
 
 #[derive(Debug)]

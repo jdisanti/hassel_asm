@@ -1,6 +1,9 @@
+use serde_json;
+
 use ast;
 use ir;
 use ir::gen::AppendBytes;
+use ir::map::SourceMap;
 use error;
 use src_unit::SrcUnits;
 
@@ -9,6 +12,7 @@ pub struct AssemblerOutput {
     pub ast: Option<Vec<ast::Statement>>,
     pub ir: Option<ir::IR>,
     pub bytes: Option<Vec<u8>>,
+    pub source_map: Option<String>,
 }
 
 #[derive(Default)]
@@ -34,6 +38,7 @@ impl Assembler {
             ast: Some(self.units),
             ir: None,
             bytes: None,
+            source_map: None,
         };
 
         output.ir = Some(Assembler::translate_error(
@@ -42,6 +47,9 @@ impl Assembler {
                 output.ast.as_ref().unwrap(),
             ),
         )?);
+
+        let src_map = SourceMap::new(&self.src_units, output.ir.as_ref().unwrap());
+        output.source_map = Some(serde_json::to_string(&src_map)?);
 
         output.bytes = Some(Assembler::convert_to_bytes(output.ir.as_ref().unwrap()));
         Ok(output)

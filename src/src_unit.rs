@@ -1,13 +1,13 @@
 use src_tag::SrcTag;
 
-#[derive(Debug, new)]
+#[derive(Debug, Serialize, new)]
 pub struct SrcUnit {
     pub id: usize,
     pub name: String,
     pub source: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct SrcUnits {
     units: Vec<SrcUnit>,
 }
