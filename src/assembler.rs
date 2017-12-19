@@ -44,7 +44,7 @@ impl Assembler {
 
         Assembler::translate_error(&self.src_units, output.ir.as_mut().unwrap().resolve())?;
 
-        // TODO: generate bytes
+        output.bytes = Some(output.ir.as_ref().unwrap().to_bytes());
 
         Ok(output)
     }

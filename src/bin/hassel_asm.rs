@@ -71,7 +71,17 @@ pub fn main() {
     handle_result(assembler.parse_unit(&options.input_name, &input_source));
 
     let assembler_output = handle_result(assembler.assemble());
-    println!("{:#?}", assembler_output);
 
-    // TODO: output binary
+    let output_file_name = options.output_name.unwrap_or("out.rom".into());
+    let mut file = match File::create(output_file_name) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("Failed to create output file: {}", e);
+            return;
+        }
+    };
+    if !file.write_all(&assembler_output.bytes.unwrap()).is_ok() {
+        println!("Failed to write to output file");
+        return;
+    }
 }

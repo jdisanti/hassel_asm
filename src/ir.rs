@@ -39,7 +39,7 @@ impl IRParam {
     pub fn len(&self) -> Option<u8> {
         match *self {
             IRParam::Resolved(_, param) => Some(param.len()),
-            _ => None
+            _ => None,
         }
     }
 
@@ -59,6 +59,7 @@ impl IRParam {
                     let pc = op_position.wrapping_add(2);
                     let pc_offset = ((position as isize) - (pc as isize)) as i16;
                     if pc_offset > 127 || pc_offset < -128 {
+                        // TODO: Refactor so that this code modification is possible
                         let msg = "modifying code to fix branch offsets outside \
                             of range -128 to +127 is not currently supported";
                         return Err(AssemblerError(tag, msg.into()).into());
@@ -94,6 +95,22 @@ impl IROp {
         assert!(self.param.len() == Some(self.code.len - 1));
         Ok(())
     }
+
+    fn append_bytes(&self, bytes: &mut Vec<u8>) {
+        bytes.push(self.code.value);
+        if let IRParam::Resolved(_, param) = self.param {
+            match param {
+                OpParam::None => {},
+                OpParam::Byte(val) => bytes.push(val),
+                OpParam::Word(_) => {
+                    bytes.push(param.low_byte());
+                    bytes.push(param.high_byte());
+                }
+            }
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -118,6 +135,13 @@ impl IRChunk {
         match *self {
             IRChunk::Op(ref mut op) => op.resolve_op_params(chunk_position, lookup_table),
             _ => Ok(()),
+        }
+    }
+
+    fn append_bytes(&self, bytes: &mut Vec<u8>) {
+        match *self {
+            IRChunk::Op(ref op) => op.append_bytes(bytes),
+            IRChunk::Bytes(ref val) => bytes.extend(val),
         }
     }
 }
@@ -172,6 +196,12 @@ impl IRBlock {
             Ok(())
         }
     }
+
+    fn append_bytes(&self, bytes: &mut Vec<u8>) {
+        for chunk in &self.chunks {
+            chunk.append_bytes(bytes);
+        }
+    }
 }
 
 #[derive(Debug, new)]
@@ -180,6 +210,25 @@ pub struct IR {
 }
 
 impl IR {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        if self.blocks.is_empty() {
+            return Vec::new();
+        }
+
+        let start_pos = self.blocks[0].position.unwrap() as usize;
+
+        let mut bytes = Vec::new();
+        for block in &self.blocks {
+            let current_pos = start_pos + bytes.len();
+            assert!(current_pos <= 0xFFFF && current_pos + block.length as usize <= 0xFFFF);
+            if block.position.unwrap() as usize > current_pos {
+                bytes.resize(block.position.unwrap() as usize - start_pos, 0);
+            }
+            block.append_bytes(&mut bytes);
+        }
+        bytes
+    }
+
     pub fn resolve(&mut self) -> error::Result<()> {
         for block in &mut self.blocks {
             block.resolve_length()?;
