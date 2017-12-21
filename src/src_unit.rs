@@ -29,6 +29,15 @@ impl SrcUnits {
         &self.units[unit_id]
     }
 
+    pub fn unit_by_name(&self, name: &str) -> Option<&SrcUnit> {
+        for unit in &self.units {
+            if unit.name == name {
+                return Some(unit);
+            }
+        }
+        None
+    }
+
     pub fn line_comment(&self, tag: SrcTag) -> String {
         let (row, col) = tag.row_col(&self.units[tag.unit].source);
         let line = tag.line(&self.units[tag.unit].source);

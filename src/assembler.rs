@@ -1,4 +1,6 @@
 use serde_json;
+use std::fs::File;
+use std::io::prelude::*;
 
 use ast;
 use ir;
@@ -26,10 +28,32 @@ impl Assembler {
         Assembler::default()
     }
 
-    pub fn parse_unit(&mut self, unit_name: &str, unit: &str) -> error::Result<()> {
+    fn parse_units(&mut self, unit_name: &str, unit: &str) -> error::Result<Vec<ast::Statement>> {
         let unit_id = self.src_units.push_unit(unit_name.into(), unit.into());
-        let statements = ast::Statement::parse(self.src_units.unit(unit_id))?;
-        self.units.extend(statements.into_iter());
+        let parsed = ast::Statement::parse(self.src_units.unit(unit_id))?;
+        let mut units = Vec::with_capacity(parsed.len());
+
+        for statement in parsed.into_iter() {
+            match statement {
+                ast::Statement::MetaInstruction(ast::MetaInstruction::Include(_tag, ref file_name)) => {
+                    let mut file = File::open(&**file_name)?;
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents)?;
+                    let included_units = self.parse_units(file_name, &contents)?;
+                    units.extend(included_units.into_iter());
+                }
+                _ => {
+                    units.push(statement);
+                }
+            }
+        }
+
+        Ok(units)
+    }
+
+    pub fn parse_unit(&mut self, unit_name: &str, unit: &str) -> error::Result<()> {
+        let units = self.parse_units(unit_name, unit)?;
+        self.units.extend(units.into_iter());
         Ok(())
     }
 
@@ -43,9 +67,7 @@ impl Assembler {
 
         output.ir = Some(Assembler::translate_error(
             &self.src_units,
-            ir::gen::IRGenerator::generate(
-                output.ast.as_ref().unwrap(),
-            ),
+            ir::gen::IRGenerator::generate(output.ast.as_ref().unwrap()),
         )?);
 
         let src_map = SourceMap::new(&self.src_units, output.ir.as_ref().unwrap());
@@ -58,11 +80,7 @@ impl Assembler {
     fn translate_error<T>(src_units: &SrcUnits, result: error::Result<T>) -> error::Result<T> {
         match result {
             Ok(_) => result,
-            Err(err) => {
-                Err(
-                    error::ErrorKind::SrcUnitError(error::format_error(src_units, &err)).into(),
-                )
-            }
+            Err(err) => Err(error::ErrorKind::SrcUnitError(error::format_error(src_units, &err)).into()),
         }
     }
 

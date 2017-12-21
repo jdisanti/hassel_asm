@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use ir::{IR, IRBlock, IRChunk, IROp};
+use ir::{IRBlock, IRChunk, IROp, IR};
 use src_tag::SrcTag;
 use src_unit::SrcUnits;
 

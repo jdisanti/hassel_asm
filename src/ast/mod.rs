@@ -44,6 +44,9 @@ pub enum Operand {
 pub enum MetaInstruction {
     Org(SrcTag, Number),
     Byte(SrcTag, Vec<Number>),
+    Word(SrcTag, Vec<Number>),
+    Vector(SrcTag, Arc<String>),
+    Include(SrcTag, Arc<String>),
 }
 
 #[derive(Debug)]
@@ -67,9 +70,7 @@ impl Statement {
                     Err(err) => Err(translate_errors(src_unit, [err].iter()).into()),
                 }
             } else {
-                Err(
-                    translate_errors(src_unit, errors.iter().map(|err| &err.error)).into(),
-                )
+                Err(translate_errors(src_unit, errors.iter().map(|err| &err.error)).into())
             }
         }
     }
@@ -89,28 +90,21 @@ where
             lalrpop_util::ParseError::UnrecognizedToken {
                 ref token,
                 ref expected,
-            } => {
-                match *token {
-                    Some((start, token, _end)) => {
-                        let (row, col) = SrcTag::new(0, start).row_col(&unit.source);
-                        messages.push(format!(
-                            "{}:{}:{}: unexpected token \"{}\". Expected one of: {:?}",
-                            unit.name,
-                            row,
-                            col,
-                            token.1,
-                            expected
-                        ));
-                    }
-                    None => {
-                        messages.push(format!(
-                            "{}: unexpected EOF; expected: {:?}",
-                            unit.name,
-                            expected
-                        ));
-                    }
+            } => match *token {
+                Some((start, token, _end)) => {
+                    let (row, col) = SrcTag::new(0, start).row_col(&unit.source);
+                    messages.push(format!(
+                        "{}:{}:{}: unexpected token \"{}\". Expected one of: {:?}",
+                        unit.name, row, col, token.1, expected
+                    ));
                 }
-            }
+                None => {
+                    messages.push(format!(
+                        "{}: unexpected EOF; expected: {:?}",
+                        unit.name, expected
+                    ));
+                }
+            },
             lalrpop_util::ParseError::ExtraToken { ref token } => {
                 let (row, col) = SrcTag::new(0, token.0).row_col(&unit.source);
                 messages.push(format!(

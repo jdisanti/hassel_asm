@@ -1,7 +1,7 @@
-extern crate hassel_asm;
 extern crate clap;
+extern crate hassel_asm;
 
-use hassel_asm::{Assembler, error};
+use hassel_asm::{error, Assembler};
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -38,7 +38,9 @@ fn get_options() -> Options {
                 .takes_value(true),
         )
         .arg(
-            clap::Arg::with_name("INPUT").help("Input source file to use").required(true),
+            clap::Arg::with_name("INPUT")
+                .help("Input source file to use")
+                .required(true),
         );
     let cli_matches = cli_app.get_matches();
 
@@ -76,7 +78,10 @@ pub fn main() {
     let source_map_file_name = format!("{}.map", output_file_name);
 
     save_bytes(&output_file_name, &assembler_output.bytes.unwrap());
-    save_bytes(&source_map_file_name, &assembler_output.source_map.unwrap().as_bytes());
+    save_bytes(
+        &source_map_file_name,
+        &assembler_output.source_map.unwrap().as_bytes(),
+    );
 }
 
 fn save_bytes(file_name: &str, bytes: &[u8]) {

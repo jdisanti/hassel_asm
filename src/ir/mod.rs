@@ -18,7 +18,10 @@ impl IRParam {
     pub fn mode(&self) -> OpAddressMode {
         use self::IRParam::*;
         match *self {
-            Resolved(mode, _) | Unresolved(mode, _, _) | UnresolvedLowByte(mode, _, _) | UnresolvedHighByte(mode, _, _) => mode,
+            Resolved(mode, _)
+            | Unresolved(mode, _, _)
+            | UnresolvedLowByte(mode, _, _)
+            | UnresolvedHighByte(mode, _, _) => mode,
         }
     }
 
@@ -52,6 +55,7 @@ pub struct IROp {
 pub enum IRChunk {
     Op(IROp),
     Bytes(Vec<u8>),
+    Vector(SrcTag, Arc<String>, u16),
 }
 
 impl IRChunk {
@@ -59,6 +63,7 @@ impl IRChunk {
         match *self {
             IRChunk::Op(ref op) => op.code.len as usize,
             IRChunk::Bytes(ref bytes) => bytes.len(),
+            IRChunk::Vector(_, _, _) => 2,
         }
     }
 }
@@ -87,6 +92,11 @@ impl IRBlock {
 
     fn add_bytes(&mut self, bytes: Vec<u8>) {
         self.chunks.push(IRChunk::Bytes(bytes));
+    }
+
+    fn add_vector(&mut self, tag: SrcTag, label: &Arc<String>) {
+        self.chunks
+            .push(IRChunk::Vector(tag, Arc::clone(&label), 0));
     }
 }
 

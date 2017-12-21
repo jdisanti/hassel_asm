@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use ast;
 use error;
 use error::ErrorKind::AssemblerError;
-use ir::{IR, IRBlock, IRChunk, IRParam, IROp};
+use ir::{IRBlock, IRChunk, IROp, IRParam, IR};
 use src_tag::SrcTag;
 
 pub trait AppendBytes {
@@ -25,6 +25,10 @@ impl AppendBytes for IRChunk {
         match *self {
             IRChunk::Op(ref op) => op.append_bytes(bytes),
             IRChunk::Bytes(ref val) => bytes.extend(val),
+            IRChunk::Vector(_, _, val) => {
+                bytes.push(val as u8);
+                bytes.push((val >> 8) as u8);
+            }
         }
     }
 }
@@ -53,11 +57,11 @@ trait ResolveLength {
 
 impl ResolveLength for IRBlock {
     fn resolve_length(&mut self) -> error::Result<()> {
-        let length = self.chunks.iter().fold(0usize, |acc, chunk| acc + chunk.len());
+        let length = self.chunks
+            .iter()
+            .fold(0usize, |acc, chunk| acc + chunk.len());
         if length > 0xFFFF {
-            Err(
-                error::ErrorKind::SrcUnitError("assembly won't fit in 65535 bytes".into()).into(),
-            )
+            Err(error::ErrorKind::SrcUnitError("assembly won't fit in 65535 bytes".into()).into())
         } else {
             self.length = length as u16;
             Ok(())
@@ -78,7 +82,7 @@ impl ResolveParameters for IRBlock {
         let mut position = block_position;
         for chunk in &mut self.chunks {
             chunk.resolve_parameters(position, lookup_table)?;
-            position += chunk.len() as u16;
+            position = position.wrapping_add(chunk.len() as u16);
         }
         Ok(())
     }
@@ -92,6 +96,14 @@ impl ResolveParameters for IRChunk {
     ) -> error::Result<()> {
         match *self {
             IRChunk::Op(ref mut op) => op.resolve_parameters(chunk_position, lookup_table),
+            IRChunk::Vector(tag, ref label, ref mut value) => {
+                if let Some(position) = lookup_table.get(label) {
+                    *value = *position;
+                    Ok(())
+                } else {
+                    Err(AssemblerError(tag, format!("unknown label: \"{}\"", label)).into())
+                }
+            }
             _ => Ok(()),
         }
     }
@@ -108,10 +120,12 @@ impl ResolveParameters for IROp {
 
 impl ResolveParameters for IRParam {
     fn resolve_parameters(&mut self, op_position: u16, lookup_table: &HashMap<Arc<String>, u16>) -> error::Result<()> {
-        let lookup = &|tag: SrcTag, name: &Arc<String>| if let Some(position) = lookup_table.get(name) {
-            Ok(*position)
-        } else {
-            Err(AssemblerError(tag, format!("unknown label: \"{}\"", name)))
+        let lookup = &|tag: SrcTag, name: &Arc<String>| {
+            if let Some(position) = lookup_table.get(name) {
+                Ok(*position)
+            } else {
+                Err(AssemblerError(tag, format!("unknown label: \"{}\"", name)))
+            }
         };
 
         let replacement = match *self {
@@ -125,7 +139,7 @@ impl ResolveParameters for IRParam {
                     if pc_offset > 127 || pc_offset < -128 {
                         // TODO: Refactor so that this code modification is possible
                         let msg = "modifying code to fix branch offsets outside \
-                            of range -128 to +127 is not currently supported";
+                                   of range -128 to +127 is not currently supported";
                         return Err(AssemblerError(tag, msg.into()).into());
                     } else {
                         IRParam::Resolved(mode, OpParam::Byte(pc_offset as u8))
@@ -172,7 +186,7 @@ impl IRGenerator {
             if let Some(ref label) = block.label {
                 lookup_table.insert(Arc::clone(label), position);
             }
-            position += block.length;
+            position = position.wrapping_add(block.length);
         }
 
         for block in &mut ir.blocks {
@@ -199,44 +213,55 @@ impl IRGenerator {
                             param = param.with_mode(OpAddressMode::PCOffset);
                         }
                         if let Some(op_code) = OpCode::find_by_class_and_mode(op_class, param.mode()) {
-                            builder.current_block().add_op(IROp::new(tag, op_code, param, 0));
+                            builder
+                                .current_block()
+                                .add_op(IROp::new(tag, op_code, param, 0));
                         } else {
-                            return Err(
-                                AssemblerError(tag, format!("op {} requires a parameter", name)).into(),
-                            );
+                            return Err(AssemblerError(tag, format!("op {} requires a parameter", name)).into());
                         }
                     } else {
-                        return Err(
-                            AssemblerError(tag, format!("unknown opcode: {}", name)).into(),
-                        );
+                        return Err(AssemblerError(tag, format!("unknown opcode: {}", name)).into());
                     }
                 }
-                MetaInstruction(ref meta_inst) => {
-                    match *meta_inst {
-                        ast::MetaInstruction::Org(tag, number) => {
-                            if let ast::Number::Word(location) = number {
-                                builder.new_block(Some(location), None);
+                MetaInstruction(ref meta_inst) => match *meta_inst {
+                    ast::MetaInstruction::Org(tag, number) => {
+                        if let ast::Number::Word(location) = number {
+                            builder.new_block(Some(location), None);
+                        } else {
+                            return Err(AssemblerError(tag, "org must be a 16-bit number".into()).into());
+                        }
+                    }
+                    ast::MetaInstruction::Byte(tag, ref numbers) => {
+                        let mut bytes = Vec::new();
+                        for num in numbers {
+                            if let ast::Number::Byte(byte) = *num {
+                                bytes.push(byte);
                             } else {
-                                return Err(
-                                    AssemblerError(tag, "org must be a 16-bit number".into()).into(),
-                                );
+                                return Err(AssemblerError(tag, "byte constants must be in range".into()).into());
                             }
                         }
-                        ast::MetaInstruction::Byte(tag, ref numbers) => {
-                            let mut bytes = Vec::new();
-                            for num in numbers {
-                                if let ast::Number::Byte(byte) = *num {
-                                    bytes.push(byte);
-                                } else {
-                                    return Err(
-                                        AssemblerError(tag, "byte constants must be in range".into()).into(),
-                                    );
-                                }
-                            }
-                            builder.current_block().add_bytes(bytes);
-                        }
+                        builder.current_block().add_bytes(bytes);
                     }
-                }
+                    ast::MetaInstruction::Word(tag, ref numbers) => {
+                        let mut bytes = Vec::new();
+                        for num in numbers {
+                            if let ast::Number::Byte(byte) = *num {
+                                bytes.push(byte);
+                                bytes.push(0);
+                            } else if let ast::Number::Word(word) = *num {
+                                bytes.push(word as u8);
+                                bytes.push((word >> 8) as u8);
+                            } else {
+                                return Err(AssemblerError(tag, "word constants must be in range".into()).into());
+                            }
+                        }
+                        builder.current_block().add_bytes(bytes);
+                    }
+                    ast::MetaInstruction::Vector(tag, ref label) => {
+                        builder.current_block().add_vector(tag, label);
+                    }
+                    ast::MetaInstruction::Include(_, _) => {}
+                },
             }
         }
         Ok(builder.build())
@@ -248,35 +273,27 @@ impl IRGenerator {
             None => Ok(IRParam::Resolved(OpAddressMode::Implied, OpParam::None)),
             Immediate(modifier, ref term) => IRGenerator::resolve_param(term, modifier, OpAddressMode::Immediate),
             Address(modifier, ref term) => IRGenerator::resolve_param(term, modifier, OpAddressMode::Absolute),
-            AbsoluteX(ref term) => {
-                IRGenerator::resolve_param(
-                    term,
-                    ast::OperandModifier::None,
-                    OpAddressMode::AbsoluteOffsetX,
-                )
-            }
-            AbsoluteY(ref term) => {
-                IRGenerator::resolve_param(
-                    term,
-                    ast::OperandModifier::None,
-                    OpAddressMode::AbsoluteOffsetY,
-                )
-            }
+            AbsoluteX(ref term) => IRGenerator::resolve_param(
+                term,
+                ast::OperandModifier::None,
+                OpAddressMode::AbsoluteOffsetX,
+            ),
+            AbsoluteY(ref term) => IRGenerator::resolve_param(
+                term,
+                ast::OperandModifier::None,
+                OpAddressMode::AbsoluteOffsetY,
+            ),
             Indirect(ref term) => IRGenerator::resolve_param(term, ast::OperandModifier::None, OpAddressMode::Indirect),
-            IndirectX(ref term) => {
-                IRGenerator::resolve_param(
-                    term,
-                    ast::OperandModifier::None,
-                    OpAddressMode::PreIndirectX,
-                )
-            }
-            IndirectY(ref term) => {
-                IRGenerator::resolve_param(
-                    term,
-                    ast::OperandModifier::None,
-                    OpAddressMode::PostIndirectY,
-                )
-            }
+            IndirectX(ref term) => IRGenerator::resolve_param(
+                term,
+                ast::OperandModifier::None,
+                OpAddressMode::PreIndirectX,
+            ),
+            IndirectY(ref term) => IRGenerator::resolve_param(
+                term,
+                ast::OperandModifier::None,
+                OpAddressMode::PostIndirectY,
+            ),
         }
     }
 
@@ -317,21 +334,17 @@ impl IRGenerator {
                 };
                 match modifier {
                     ast::OperandModifier::None => Ok(IRParam::Resolved(corrected_mode, OpParam::Byte(val))),
-                    _ => Err(
-                        AssemblerError(tag, "can't take high/low byte of a single byte".into()).into(),
-                    ),
+                    _ => Err(AssemblerError(tag, "can't take high/low byte of a single byte".into()).into()),
                 }
             }
-            ast::Number::Word(val) => {
-                match modifier {
-                    ast::OperandModifier::None => Ok(IRParam::Resolved(mode, OpParam::Word(val))),
-                    ast::OperandModifier::HighByte => Ok(IRParam::Resolved(mode, OpParam::Byte((val >> 8) as u8))),
-                    ast::OperandModifier::LowByte => Ok(IRParam::Resolved(mode, OpParam::Byte(val as u8))),
-                }
+            ast::Number::Word(val) => match modifier {
+                ast::OperandModifier::None => Ok(IRParam::Resolved(mode, OpParam::Word(val))),
+                ast::OperandModifier::HighByte => Ok(IRParam::Resolved(mode, OpParam::Byte((val >> 8) as u8))),
+                ast::OperandModifier::LowByte => Ok(IRParam::Resolved(mode, OpParam::Byte(val as u8))),
+            },
+            ast::Number::Invalid(_val) => {
+                Err(AssemblerError(tag, "number not within 8-bit or 16-bit bounds".into()).into())
             }
-            ast::Number::Invalid(_val) => Err(
-                AssemblerError(tag, "number not within 8-bit or 16-bit bounds".into()).into(),
-            ),
         }
     }
 }
