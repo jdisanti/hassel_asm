@@ -99,6 +99,7 @@ Operand: Operand = {
 
 MetaInstruction: MetaInstruction = {
     <st:@L> ".org" <n:Number> => MetaInstruction::Org(SrcTag::new(src_unit, st), n),
+    <st:@L> ".pad" <n:Number> => MetaInstruction::Pad(SrcTag::new(src_unit, st), n),
     <st:@L> ".byte" <l:NumberCommaList> => MetaInstruction::Byte(SrcTag::new(src_unit, st), l),
     <st:@L> ".word" <l:NumberCommaList> => MetaInstruction::Word(SrcTag::new(src_unit, st), l),
     <st:@L> ".vector" <n:Name> => MetaInstruction::Vector(SrcTag::new(src_unit, st), n),

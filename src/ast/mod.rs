@@ -43,6 +43,7 @@ pub enum Operand {
 #[derive(Debug)]
 pub enum MetaInstruction {
     Org(SrcTag, Number),
+    Pad(SrcTag, Number),
     Byte(SrcTag, Vec<Number>),
     Word(SrcTag, Vec<Number>),
     Vector(SrcTag, Arc<String>),

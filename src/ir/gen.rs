@@ -183,6 +183,7 @@ impl IRGenerator {
             } else {
                 block.position = Some(position);
             }
+
             if let Some(ref label) = block.label {
                 lookup_table.insert(Arc::clone(label), position);
             }
@@ -228,7 +229,14 @@ impl IRGenerator {
                         if let ast::Number::Word(location) = number {
                             builder.new_block(Some(location), None);
                         } else {
-                            return Err(AssemblerError(tag, "org must be a 16-bit number".into()).into());
+                            return Err(AssemblerError(tag, "org must be a 16-bit address".into()).into());
+                        }
+                    }
+                    ast::MetaInstruction::Pad(tag, number) => {
+                        if let ast::Number::Word(location) = number {
+                            builder.new_block(Some(location), None);
+                        } else {
+                            return Err(AssemblerError(tag, "pad requires a 16-bit address".into()).into());
                         }
                     }
                     ast::MetaInstruction::Byte(tag, ref numbers) => {
