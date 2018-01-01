@@ -2,6 +2,7 @@
 name = "hassel_asm"
 version = "0.1.0"
 authors = ["John DiSanti <johndisanti@gmail.com>"]
+license = "MIT OR Apache-2.0"
 
 [build-dependencies]
 lalrpop = "0.13.1"
