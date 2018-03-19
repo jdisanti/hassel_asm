@@ -61,6 +61,7 @@ pub enum MetaInstruction {
 
 #[derive(Debug)]
 pub enum Statement {
+    Error,
     Comment,
     Label(SrcTag, Arc<String>),
     Instruction(SrcTag, Arc<String>, Operand),
@@ -72,13 +73,10 @@ impl Statement {
         if src_unit.source == "" {
             Ok(Vec::new())
         } else {
-            let mut errors: Vec<lalrpop_util::ErrorRecovery<usize, (usize, &'a str), ()>> = Vec::new();
+            let mut errors: Vec<lalrpop_util::ErrorRecovery<usize, grammar::Token, &'static str>> = Vec::new();
             let ast = grammar::parse_Program(src_unit.id, &mut errors, &src_unit.source);
             if errors.is_empty() {
-                match ast {
-                    Ok(expression) => Ok(expression),
-                    Err(err) => Err(translate_errors(src_unit, [err].iter()).into()),
-                }
+                Ok(ast.unwrap())
             } else {
                 Err(translate_errors(src_unit, errors.iter().map(|err| &err.error)).into())
             }
@@ -88,7 +86,7 @@ impl Statement {
 
 fn translate_errors<'a, I>(unit: &SrcUnit, errors: I) -> error::ErrorKind
 where
-    I: Iterator<Item = &'a lalrpop_util::ParseError<usize, (usize, &'a str), ()>>,
+    I: Iterator<Item = &'a lalrpop_util::ParseError<usize, grammar::Token<'a>, &'static str>>,
 {
     let mut messages = Vec::new();
     for error in errors {
@@ -101,7 +99,7 @@ where
                 ref token,
                 ref expected,
             } => match *token {
-                Some((start, token, _end)) => {
+                Some((start, ref token, _end)) => {
                     let (row, col) = SrcTag::new(0, start).row_col(&unit.source);
                     messages.push(format!(
                         "{}:{}:{}: unexpected token \"{}\". Expected one of: {:?}",

@@ -212,6 +212,7 @@ impl IRGenerator {
         for statement in units {
             use ast::Statement::*;
             match *statement {
+                Error => unreachable!(),
                 Comment => {}
                 Label(_tag, ref label) => {
                     builder.new_block(None, Some(Arc::clone(label)));

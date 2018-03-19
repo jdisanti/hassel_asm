@@ -17,7 +17,7 @@ use lalrpop_util::ErrorRecovery;
 
 use ast::{Number, Term, Operand, OperandModifier, MetaInstruction, Statement};
 
-grammar<'err>(src_unit: usize, errors: &'err mut Vec<ErrorRecovery<usize, (usize, &'input str), ()>>);
+grammar<'err>(src_unit: usize, errors: &'err mut Vec<ErrorRecovery<usize, Token<'input>, &'static str>>);
 
 match {
     r";[^\n]*",
@@ -125,6 +125,10 @@ Statement: Statement = {
     <st:@L> <i:Instruction> <o:Operand> => Statement::Instruction(SrcTag::new(src_unit, st), i, o),
     <m:MetaInstruction> => Statement::MetaInstruction(m),
     <st:@L> <l:Label> => Statement::Label(SrcTag::new(src_unit, st), l),
+    ! => {
+        errors.push(<>);
+        Statement::Error
+    }
 };
 
 pub Program: Vec<Statement> = {

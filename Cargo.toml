@@ -5,14 +5,14 @@ authors = ["John DiSanti <johndisanti@gmail.com>"]
 license = "MIT OR Apache-2.0"
 
 [build-dependencies]
-lalrpop = "0.13.1"
+lalrpop = "0.14"
 
 [dependencies]
-clap = "2.27"
+clap = "2.31"
 derive-new = "0.5"
 error-chain = "0.11"
-lalrpop-util = "0.13.1"
-regex = "0.2.1"
+lalrpop-util = "0.14"
+regex = "0.2"
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
