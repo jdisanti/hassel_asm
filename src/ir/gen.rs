@@ -235,17 +235,17 @@ impl IRGenerator {
                 }
                 MetaInstruction(ref meta_inst) => match *meta_inst {
                     ast::MetaInstruction::Org(tag, number) => {
-                        if let ast::Number::Word(location) = number {
-                            builder.new_block(Some(location), None);
-                        } else {
-                            return Err(AssemblerError(tag, "org must be a 16-bit address".into()).into());
+                        match number {
+                            ast::Number::Byte(location) => builder.new_block(Some(location as u16), None),
+                            ast::Number::Word(location) => builder.new_block(Some(location), None),
+                            _ => return Err(AssemblerError(tag, "org must be a 16-bit address".into()).into()),
                         }
                     }
                     ast::MetaInstruction::Pad(tag, number) => {
-                        if let ast::Number::Word(location) = number {
-                            builder.new_block(Some(location), None);
-                        } else {
-                            return Err(AssemblerError(tag, "pad requires a 16-bit address".into()).into());
+                        match number {
+                            ast::Number::Byte(location) => builder.new_block(Some(location as u16), None),
+                            ast::Number::Word(location) => builder.new_block(Some(location), None),
+                            _ => return Err(AssemblerError(tag, "pad requires a 16-bit address".into()).into()),
                         }
                     }
                     ast::MetaInstruction::Byte(tag, ref numbers) => {
